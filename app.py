@@ -1,102 +1,93 @@
-import streamlit as st
 import cv2
 import pytesseract
 import pandas as pd
+import numpy as np
 import re
 from datetime import datetime
-from PIL import Image
-import io
+import streamlit as st
 
-# Streamlit App Title
-st.title("📊 DIU Time Tracker")
+# Configure Tesseract executable path (if necessary)
+# Uncomment and specify path if not in default PATH
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# Step 1: Upload Multiple Images
-uploaded_files = st.file_uploader("📂 Upload attendance screenshots", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+# Streamlit app
+st.title("DIU Time Tracking 📊")
+st.write("Upload your attendance screenshots to process and generate an Excel summary.")
+
+# File uploader
+uploaded_files = st.file_uploader("Upload Attendance Screenshots", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
-    # Initialize an empty list to store punch times from all images
     all_punch_times = []
 
-    # Process each uploaded image
     for uploaded_file in uploaded_files:
-        st.write(f"✅ Processing file: {uploaded_file.name}")
+        # Load and preprocess image
+        file_bytes = uploaded_file.read()
+        image = cv2.imdecode(np.frombuffer(file_bytes, np.uint8), cv2.IMREAD_COLOR)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
-        # Step 2: Load and Preprocess Image
-        image = Image.open(uploaded_file)
-        image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)  # Convert PIL image to OpenCV format
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)  # Apply thresholding
-
-        # Step 3: Extract Text using OCR
+        # Extract text using pytesseract
         extracted_text = pytesseract.image_to_string(thresh)
 
-        # Step 4: Extract Punch Times manually
+        # Extract punch times
         lines = extracted_text.split("\n")
-        punch_times = []
-
-        for line in lines:
-            line = line.strip()
-            # Match date-time format (e.g., "Jan 28, 2025, 11:32:48 AM")
-            if re.match(r"[A-Za-z]{3} \d{1,2}, \d{4}, \d{1,2}:\d{2}:\d{2} [APap][Mm]", line):
-                punch_times.append(line)
-
-        # Add punch times from current image to the main list
+        punch_times = [
+            line.strip()
+            for line in lines
+            if re.match(r"[A-Za-z]{3} \d{1,2}, \d{4}, \d{1,2}:\d{2}:\d{2} [APap][Mm]", line.strip())
+        ]
         all_punch_times.extend(punch_times)
 
-    # Step 5: Convert to Pandas DataFrame
+    # Convert to DataFrame
     df = pd.DataFrame(all_punch_times, columns=["Punch Time"])
 
-    # Step 6: Convert "Punch Time" to datetime format
-    try:
-        df["Punch Time"] = pd.to_datetime(df["Punch Time"], format="%b %d, %Y, %I:%M:%S %p")
-    except Exception as e:
-        st.error(f"⛔ Date Parsing Error! Check extracted text format: {e}")
+    # Parse datetime
+    df["Punch Time"] = pd.to_datetime(df["Punch Time"], format="%b %d, %Y, %I:%M:%S %p", errors="coerce")
 
-    # Step 7: Pair Punch-In and Punch-Out Times based on the Same Date
-    df['Date'] = df['Punch Time'].dt.date  # Extract the date
-    df = df.sort_values(by=['Date', 'Punch Time'])  # Sort by Date and Time
+    # Group by date and pair times
+    df['Date'] = df['Punch Time'].dt.date
+    df = df.sort_values(by=['Date', 'Punch Time'])
 
-    # Initialize lists to store paired times
-    pair_start = []
-    pair_end = []
-
-    # Loop to pair punch-in and punch-out based on the same date
+    pair_start, pair_end = [], []
     for date, group in df.groupby('Date'):
-        group = group.reset_index(drop=True)  # Reset index for the group
-        for i in range(0, len(group), 2):  # Loop in steps of 2 to pair them
-            if i + 1 < len(group):  # If there is a pair
-                pair_start.append(group.loc[i, 'Punch Time'])
-                pair_end.append(group.loc[i + 1, 'Punch Time'])
-            else:
-                # If unpaired punch, store only the start time
-                pair_start.append(group.loc[i, 'Punch Time'])
-                pair_end.append(None)  # No pair for the last punch-in
+        group = group.reset_index(drop=True)
+        for i in range(0, len(group), 2):
+            pair_start.append(group.loc[i, 'Punch Time'])
+            pair_end.append(group.loc[i + 1, 'Punch Time'] if i + 1 < len(group) else None)
 
-    # Add the paired times to the DataFrame
     df_pairs = pd.DataFrame({
         'Punch In': pair_start,
         'Punch Out': pair_end
     })
 
-    # Step 8: Calculate Duration (Time Difference) for Each Pair
     df_pairs['Duration (hrs)'] = (df_pairs['Punch Out'] - df_pairs['Punch In']).dt.total_seconds() / 3600
-    df_pairs['Duration (hrs)'].fillna(0, inplace=True)  # For unpaired punches, set duration to 0
+    df_pairs['Duration (hrs)'].fillna(0, inplace=True)
 
-    # Step 9: Calculate Daily Time (Total time spent per day)
+    # Daily time summary
     daily_time = df_pairs.groupby(df_pairs['Punch In'].dt.date)['Duration (hrs)'].sum().reset_index()
+    daily_time.columns = ['Date', 'Total Hours']
 
-    # Step 10: Calculate Monthly Average Punch-in Time
-    daily_time['Month'] = pd.to_datetime(daily_time['Punch In']).dt.to_period('M')  # Extract month
-    monthly_avg = daily_time.groupby('Month')['Duration (hrs)'].mean().reset_index()
+    # Monthly average summary
+    daily_time['Month'] = pd.to_datetime(daily_time['Date']).dt.to_period('M')
+    monthly_avg = daily_time.groupby('Month')['Total Hours'].mean().reset_index()
 
-    # Step 11: Save the results to Excel
+    # Show results
+    st.write("### Paired Punch Times and Durations")
+    st.dataframe(df_pairs)
+
+    st.write("### Daily Time Summary")
+    st.dataframe(daily_time)
+
+    st.write("### Monthly Average Time")
+    st.dataframe(monthly_avg)
+
+    # Download Excel
     output_filename = "attendance_summary.xlsx"
     with pd.ExcelWriter(output_filename) as writer:
-        daily_time.to_excel(writer, sheet_name='Daily Time', index=False)
-        monthly_avg.to_excel(writer, sheet_name='Monthly Average', index=False)
+        daily_time.to_excel(writer, sheet_name="Daily Time", index=False)
+        monthly_avg.to_excel(writer, sheet_name="Monthly Average", index=False)
 
-    # Step 12: Provide Download Link
-    st.success("✅ Processing complete!")
     with open(output_filename, "rb") as file:
         st.download_button(
             label="📥 Download Excel File",
@@ -104,13 +95,3 @@ if uploaded_files:
             file_name=output_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-    # Debugging: Display DataFrames
-    st.write("📊 Paired Punch Times and Durations:")
-    st.dataframe(df_pairs)
-
-    st.write("📅 Daily Time (Total time per day in hours):")
-    st.dataframe(daily_time)
-
-    st.write("📈 Monthly Average Punch-in Time (in hours):")
-    st.dataframe(monthly_avg)
