@@ -9,7 +9,7 @@ import streamlit as st
 # Configure Tesseract executable path (if necessary)
 # Uncomment and specify path if not in default PATH
 #pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' #for local pc
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract" #for streamlit cloud
+#pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract" #for streamlit cloud
 
 # Streamlit app
 st.title("DIU Time Tracking 📊")
