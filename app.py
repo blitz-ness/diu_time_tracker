@@ -16,7 +16,7 @@ st.title("DIU Time Tracking 📊")
 st.write("Upload your attendance screenshots to process and generate an Excel summary.")
 
 # File uploader
-uploaded_files = st.file_uploader("Upload Attendance Screenshots", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Attendance Screenshots from ESS portal:", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
 
 if uploaded_files:
     all_punch_times = []
