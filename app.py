@@ -14,6 +14,7 @@ import streamlit as st
 # Streamlit app
 st.title("DIU Time Tracking 📊")
 st.write("Upload your attendance screenshots to process and generate an Excel summary.")
+st.write("Tutorial link: https://jumpshare.com/s/wXrLatu9jzgzgiMmbEa3")
 
 # File uploader
 uploaded_files = st.file_uploader("Upload Attendance Screenshots from ESS portal:", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
