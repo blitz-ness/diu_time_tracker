@@ -1,0 +1,7 @@
+[server]
+headless = true
+enableCORS=false
+
+[global]
+# Path to the shell script
+setupScript = "setup.sh"
